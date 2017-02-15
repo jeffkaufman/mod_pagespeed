@@ -17,7 +17,7 @@
 // Author: morlovich@google.com (Maksim Orlovich)
 //
 // This provides basic parsing and evaluation of a (subset of)
-// Content-Security-Policy that's relevant for PageSpeed Automatic
+// Content-Security-Policy that's relevant for PageSpeed Automatic.
 
 #include "net/instaweb/rewriter/public/csp.h"
 
@@ -209,12 +209,16 @@ bool CspSourceExpression::Matches(
       return false;
     }
 
-    if (origin_url.SchemeIs("http") &&
-        (url.SchemeIs("https") || url.SchemeIs("wss")) &&
-        ((origin_url.EffectiveIntPort() == url.EffectiveIntPort())
-         || (HasDefaultPortForScheme(origin_url)
-             && HasDefaultPortForScheme(url)))) {
-      return true;
+    if (origin_url.SchemeIs("http") && url.SchemeIs("https")) {
+      // Using the same port is OK.
+      if (origin_url.EffectiveIntPort() == url.EffectiveIntPort()) {
+        return true;
+      }
+
+      // Using default ports for both is OK, too.
+      if (HasDefaultPortForScheme(origin_url) && HasDefaultPortForScheme(url)) {
+        return true;
+      }
     }
 
     return false;
@@ -245,11 +249,7 @@ bool CspSourceExpression::Matches(
   // TODO(morlovich): Lowercase our state at parse, for efficiency?
   if (!expr_scheme.empty()
       && !StringCaseEqual(url.Scheme(), expr_scheme)
-      && !(StringCaseEqual(expr_scheme, "http") && url.SchemeIs("https"))
-      && !(StringCaseEqual(expr_scheme, "ws") &&
-           (url.SchemeIs("wss") || url.SchemeIs("http")
-            || url.SchemeIs("https")))
-      && !(StringCaseEqual(expr_scheme, "wss") && url.SchemeIs("https"))) {
+      && !(StringCaseEqual(expr_scheme, "http") && url.SchemeIs("https"))) {
     return false;
   }
 
@@ -263,9 +263,7 @@ bool CspSourceExpression::Matches(
 
   if (expr_scheme.empty()
       && !StringCaseEqual(url.Scheme(), origin_url.Scheme())
-      && !(origin_url.SchemeIs("http") &&
-           (url.SchemeIs("https") || url.SchemeIs("ws") || url.SchemeIs("wss")))
-      && !(origin_url.SchemeIs("https") && url.SchemeIs("wss"))) {
+      && !(origin_url.SchemeIs("http") && url.SchemeIs("https"))) {
     return false;
   }
 
