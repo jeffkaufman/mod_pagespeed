@@ -84,6 +84,7 @@ bool CspSourceExpression::TryParseScheme(StringPiece* input) {
     kind_ = kSchemeSource;
     input->substr(0, pos).CopyToString(&mutable_url_data()->scheme_part);
     input->remove_prefix(pos + 1);
+    LowerString(&mutable_url_data()->scheme_part);
     return true;
   }
 
@@ -92,6 +93,7 @@ bool CspSourceExpression::TryParseScheme(StringPiece* input) {
        && ((*input)[pos + 1] == '/') && ((*input)[pos + 2] == '/')) {
     input->substr(0, pos).CopyToString(&mutable_url_data()->scheme_part);
     input->remove_prefix(pos + 3);
+    LowerString(&mutable_url_data()->scheme_part);
   }
 
   // Either way, it's not a valid scheme-source at this point, even if it's
@@ -140,6 +142,7 @@ CspSourceExpression CspSourceExpression::Parse(StringPiece input) {
       result.mutable_url_data()->host_part.push_back(input[0]);
       input.remove_prefix(1);
     }
+    LowerString(&result.mutable_url_data()->host_part);
 
     // Verify accumulated host-part is valid.
     StringPiece host_part(result.url_data().host_part);
@@ -243,13 +246,12 @@ bool CspSourceExpression::Matches(
         url.SchemeIs("ftp")) {
       return true;
     }
-    return StringCaseEqual(url.Scheme(), origin_url.Scheme());
+    return (url.Scheme() == origin_url.Scheme());
   }
 
-  // TODO(morlovich): Lowercase our state at parse, for efficiency?
   if (!expr_scheme.empty()
-      && !StringCaseEqual(url.Scheme(), expr_scheme)
-      && !(StringCaseEqual(expr_scheme, "http") && url.SchemeIs("https"))) {
+      && url.Scheme() != expr_scheme
+      && !(expr_scheme == "http" && url.SchemeIs("https"))) {
     return false;
   }
 
@@ -262,18 +264,18 @@ bool CspSourceExpression::Matches(
   }
 
   if (expr_scheme.empty()
-      && !StringCaseEqual(url.Scheme(), origin_url.Scheme())
+      && url.Scheme() != origin_url.Scheme()
       && !(origin_url.SchemeIs("http") && url.SchemeIs("https"))) {
     return false;
   }
 
   if (expr_host[0] == '*') {
     StringPiece remaining = expr_host.substr(1);
-    if (!StringCaseEndsWith(url.Host(), remaining)) {
+    if (!url.Host().ends_with(remaining)) {
       return false;
     }
   } else {
-    if (!StringCaseEqual(url.Host(), expr_host)) {
+    if (url.Host() != expr_host) {
       return false;
     }
   }
