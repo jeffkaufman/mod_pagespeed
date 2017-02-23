@@ -588,4 +588,8 @@ bool CspPolicy::IsBasePermitted(
   return true;
 }
 
+void CspContext::AddPolicy(std::unique_ptr<CspPolicy> policy) {
+  policies_.push_back(std::move(policy));
+}
+
 }  // namespace net_instaweb
