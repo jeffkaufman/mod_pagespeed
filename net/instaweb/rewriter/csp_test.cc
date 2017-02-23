@@ -86,7 +86,6 @@ TEST(CspParseSourceTest, Quoted) {
       CspSourceExpression(CspSourceExpression::kHashOrNonce),
       CspSourceExpression::Parse("'sha256-qwertyu12345/=='"));
 
-
   // Some base64 errors.
   EXPECT_EQ(
       CspSourceExpression(CspSourceExpression::kUnknown),
@@ -449,6 +448,7 @@ TEST(CspParseSourceListTest, Flags) {
     EXPECT_TRUE(l1->saw_unsafe_eval());
     EXPECT_FALSE(l1->saw_strict_dynamic());
     EXPECT_FALSE(l1->saw_unsafe_hashed_attributes());
+    EXPECT_FALSE(l1->saw_hash_or_nonce());
   }
 
   {
@@ -457,6 +457,7 @@ TEST(CspParseSourceListTest, Flags) {
     EXPECT_FALSE(l2->saw_unsafe_eval());
     EXPECT_FALSE(l2->saw_strict_dynamic());
     EXPECT_FALSE(l2->saw_unsafe_hashed_attributes());
+    EXPECT_FALSE(l2->saw_hash_or_nonce());
   }
 
   {
@@ -466,6 +467,7 @@ TEST(CspParseSourceListTest, Flags) {
     EXPECT_FALSE(l3->saw_unsafe_eval());
     EXPECT_FALSE(l3->saw_strict_dynamic());
     EXPECT_TRUE(l3->saw_unsafe_hashed_attributes());
+    EXPECT_FALSE(l3->saw_hash_or_nonce());
   }
 
   {
@@ -475,6 +477,17 @@ TEST(CspParseSourceListTest, Flags) {
     EXPECT_FALSE(l4->saw_unsafe_eval());
     EXPECT_TRUE(l4->saw_strict_dynamic());
     EXPECT_FALSE(l4->saw_unsafe_hashed_attributes());
+    EXPECT_FALSE(l4->saw_hash_or_nonce());
+  }
+
+  {
+    std::unique_ptr<CspSourceList> l5(
+        CspSourceList::Parse("'sha256-01234'"));
+    EXPECT_FALSE(l5->saw_unsafe_inline());
+    EXPECT_FALSE(l5->saw_unsafe_eval());
+    EXPECT_FALSE(l5->saw_strict_dynamic());
+    EXPECT_FALSE(l5->saw_unsafe_hashed_attributes());
+    EXPECT_TRUE(l5->saw_hash_or_nonce());
   }
 }
 
@@ -500,7 +513,7 @@ TEST(CspParseTest, Basic) {
   EXPECT_FALSE(default_list->saw_unsafe_eval());
   EXPECT_FALSE(default_list->saw_strict_dynamic());
   EXPECT_FALSE(default_list->saw_unsafe_hashed_attributes());
-
+  EXPECT_FALSE(default_list->saw_hash_or_nonce());
 
   ASSERT_TRUE(policy->SourceListFor(CspDirective::kScriptSrc) != nullptr);
   const CspSourceList* source_list =
@@ -516,6 +529,7 @@ TEST(CspParseTest, Basic) {
   EXPECT_TRUE(source_list->saw_unsafe_eval());
   EXPECT_FALSE(source_list->saw_strict_dynamic());
   EXPECT_FALSE(source_list->saw_unsafe_hashed_attributes());
+  EXPECT_FALSE(source_list->saw_hash_or_nonce());
 }
 
 TEST(CspParseTest, Repeated) {
@@ -533,6 +547,150 @@ TEST(CspParseTest, Repeated) {
   EXPECT_TRUE(source_list->saw_unsafe_eval());
   EXPECT_FALSE(source_list->saw_strict_dynamic());
   EXPECT_FALSE(source_list->saw_unsafe_hashed_attributes());
+  EXPECT_FALSE(source_list->saw_hash_or_nonce());
+}
+
+TEST(CspPolicyTest, Eval) {
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse("image-src *"));
+    ASSERT_TRUE(p != nullptr);
+    // No default-src or script-src specified.
+    EXPECT_TRUE(p->PermitsEval());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse("default-src *"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsEval());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "default-src *; script-src 'unsafe-eval'"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_TRUE(p->PermitsEval());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "default-src 'unsafe-eval'; script-src *"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsEval());
+  }
+}
+
+TEST(CspPolicyTest, InlineScript) {
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse("image-src *"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_TRUE(p->PermitsInlineScript());
+    EXPECT_TRUE(p->PermitsInlineScriptAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse("default-src *"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_TRUE(p->PermitsInlineScript());
+    EXPECT_TRUE(p->PermitsInlineScriptAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse("script-src *"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsInlineScript());
+    EXPECT_FALSE(p->PermitsInlineScriptAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "script-src 'unsafe-inline'"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_TRUE(p->PermitsInlineScript());
+    EXPECT_TRUE(p->PermitsInlineScriptAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "script-src 'unsafe-inline' 'sha256-123467ab'"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsInlineScript());
+    EXPECT_FALSE(p->PermitsInlineScriptAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "script-src 'unsafe-inline' 'strict-dynamic'"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsInlineScript());
+    EXPECT_FALSE(p->PermitsInlineScriptAttribute());
+  }
+
+  {
+    // TODO(morlovich): This behavior seems to follow from the spec, but doesn't
+    // make much sense, verify and file spec feedback?
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "script-src 'unsafe-inline' 'strict-dynamic' "
+        "'unsafe-hashed-attributes'"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsInlineScript());
+    EXPECT_TRUE(p->PermitsInlineScriptAttribute());
+  }
+}
+
+TEST(CspPolicyTest, InlineStyle) {
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse("image-src *"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_TRUE(p->PermitsInlineStyle());
+    EXPECT_TRUE(p->PermitsInlineStyleAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse("default-src *"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_TRUE(p->PermitsInlineStyle());
+    EXPECT_TRUE(p->PermitsInlineStyleAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse("style-src *"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsInlineStyle());
+    EXPECT_FALSE(p->PermitsInlineStyleAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "style-src 'unsafe-inline'"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_TRUE(p->PermitsInlineStyle());
+    EXPECT_TRUE(p->PermitsInlineStyleAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "style-src 'unsafe-inline' 'sha256-123467ab'"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsInlineStyle());
+    EXPECT_FALSE(p->PermitsInlineStyleAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "style-src 'unsafe-inline' 'strict-dynamic'"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsInlineStyle());
+    EXPECT_FALSE(p->PermitsInlineStyleAttribute());
+  }
+
+  {
+    std::unique_ptr<CspPolicy> p(CspPolicy::Parse(
+        "style-src 'unsafe-inline' 'strict-dynamic' "
+        "'unsafe-hashed-attributes'"));
+    ASSERT_TRUE(p != nullptr);
+    EXPECT_FALSE(p->PermitsInlineStyle());
+    EXPECT_FALSE(p->PermitsInlineStyleAttribute());
+  }
 }
 
 }  // namespace

@@ -145,7 +145,8 @@ class CspSourceList {
  public:
   CspSourceList()
       : saw_unsafe_inline_(false), saw_unsafe_eval_(false),
-        saw_strict_dynamic_(false), saw_unsafe_hashed_attributes_(false) {}
+        saw_strict_dynamic_(false), saw_unsafe_hashed_attributes_(false),
+        saw_hash_or_nonce_(false) {}
 
   static std::unique_ptr<CspSourceList> Parse(StringPiece input);
   const std::vector<CspSourceExpression>& expressions() const {
@@ -159,12 +160,15 @@ class CspSourceList {
     return saw_unsafe_hashed_attributes_;
   }
 
+  bool saw_hash_or_nonce() const { return saw_hash_or_nonce_; }
+
  private:
   std::vector<CspSourceExpression> expressions_;
   bool saw_unsafe_inline_;
   bool saw_unsafe_eval_;
   bool saw_strict_dynamic_;
   bool saw_unsafe_hashed_attributes_;
+  bool saw_hash_or_nonce_;
 };
 
 // An individual policy. Note that a page is constrained by an intersection
@@ -185,6 +189,7 @@ class CspPolicy {
   bool PermitsInlineScript() const;
   bool PermitsInlineScriptAttribute() const;
   bool PermitsInlineStyle() const;
+  bool PermitsInlineStyleAttribute() const;
 
  private:
   // The expectation is that some of these may be null.
@@ -210,6 +215,10 @@ class CspContext {
 
   bool PermitsInlineStyle() const {
     return AllPermit(&CspPolicy::PermitsInlineStyle);
+  }
+
+  bool PermitsInlineStyleAttribute() const {
+    return AllPermit(&CspPolicy::PermitsInlineStyleAttribute);
   }
 
  private:
